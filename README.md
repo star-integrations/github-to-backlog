@@ -18,6 +18,8 @@ GitHub Webhooks(push event) -> Google Cloud Functions -> Backlog API(comment)
 
 1. Open https://github.com/YOUR_ORG/YOUR_REPOSITORY/settings/hooks/new
 
+|Settings|Values|
+----|----
 |Payload URL|https://*.cloudfunctions.net/Callback|
 |Content type|**application/json**|
 |Secret||
