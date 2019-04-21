@@ -24,7 +24,7 @@ GitHub Webhooks(push event) -> Google Cloud Functions -> Backlog API(comment)
 |Content type|**application/json**|
 |Secret||
 |SSL verification|Enable SSL verification (default)|
-|Which events would you like to trigger this webhook?	|Just the push event. (default)|
+|Which events would you like to trigger this webhook?	|Send me everything.|
 |Active|On (default)|
 
 2. Add webhook

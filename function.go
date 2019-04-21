@@ -46,7 +46,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 	branchesRe := regexp.MustCompile(conf.Backlog.ProjectKey + "-[0-9]+")
 
 	hook, _ := github.New()
-	payload, err := hook.Parse(r, github.PushEvent)
+	payload, err := hook.Parse(r, github.PushEvent, github.PullRequestEvent)
 	if err != nil {
 		if err == github.ErrEventNotFound {
 			// ok event wasn;t one of the ones asked to be parsed
@@ -69,9 +69,28 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 			issueMap[issueID] = true
 		}
 
-		msg := fmt.Sprintf("branches: %s\n", branches)
-		for _, commit := range push.Commits {
-			msg += fmt.Sprintf("\n[%s](%s)\n%s\n\nby %s <%s>", commit.ID, commit.URL, commit.Message, commit.Author.Name, commit.Author.Email)
+		msg := ""
+		action := ""
+		if push.Created {
+			action = "created"
+		} else if push.Deleted {
+			action = "deleted"
+		}
+
+		if action != "" {
+			msg = fmt.Sprintf("%s %s\n", branches, action)
+		}
+
+		if len(push.Commits) > 0 {
+			commit := push.Commits[len(push.Commits)-1]
+			msg += fmt.Sprintf("\n[%s](%s) (%s)\n> %s\n> by %s(%s) <%s>\n",
+				commit.ID,
+				commit.URL,
+				branches,
+				strings.Replace(strings.TrimSpace(commit.Message), "\n", "\n> ", -1),
+				commit.Committer.Username,
+				commit.Committer.Name,
+				commit.Committer.Email)
 			issueIDs := branchesRe.FindAllString(commit.Message, -1)
 			for _, issueID := range issueIDs {
 				issueMap[issueID] = true
@@ -93,6 +112,40 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 
 		w.WriteHeader(http.StatusOK)
 		w.Write([]byte("Success"))
+
+	case github.PullRequestPayload:
+		pr := payload.(github.PullRequestPayload)
+
+		branches := strings.Replace(pr.PullRequest.Head.Ref, "refs/heads/", "", -1)
+		issueMap := map[string]bool{}
+		issueIDs := branchesRe.FindAllString(branches, -1)
+		for _, issueID := range issueIDs {
+			issueMap[issueID] = true
+		}
+
+		if pr.Action == "synchronize" {
+			w.WriteHeader(http.StatusOK)
+			w.Write([]byte("Success"))
+			return
+		}
+		msg := fmt.Sprintf("PR %s %s", pr.PullRequest.HTMLURL, pr.Action)
+
+		for issueID := range issueMap {
+			data := url.Values{}
+			data.Add("content", msg)
+			url := fmt.Sprintf("https://%s.backlog.jp/api/v2/issues/%s/comments?apiKey=%s", conf.Backlog.SpaceKey, issueID, conf.Backlog.APIKey)
+			_, err := http.PostForm(url, data)
+			if err != nil {
+				log.Printf("[backlog] Error: %#v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Internal Server Error"))
+				return
+			}
+		}
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Success"))
+
 	default:
 		msg := "Unkown payload"
 		w.Write([]byte((msg)))
