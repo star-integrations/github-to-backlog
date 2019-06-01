@@ -43,7 +43,7 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		conf = loadConfig()
 	}
 
-	branchesRe := regexp.MustCompile(conf.Backlog.ProjectKey + "-[0-9]+")
+	branchesRe := regexp.MustCompile(conf.Backlog.ProjectKey + "-?[0-9]+")
 
 	hook, _ := github.New()
 	payload, err := hook.Parse(r, github.PushEvent, github.PullRequestEvent)
@@ -133,8 +133,28 @@ func Callback(w http.ResponseWriter, r *http.Request) {
 		for issueID := range issueMap {
 			data := url.Values{}
 			data.Add("content", msg)
-			url := fmt.Sprintf("https://%s.backlog.jp/api/v2/issues/%s/comments?apiKey=%s", conf.Backlog.SpaceKey, issueID, conf.Backlog.APIKey)
-			_, err := http.PostForm(url, data)
+			apiURL := fmt.Sprintf("https://%s.backlog.jp/api/v2/issues/%s/comments?apiKey=%s", conf.Backlog.SpaceKey, issueID, conf.Backlog.APIKey)
+			_, err := http.PostForm(apiURL, data)
+			if err != nil {
+				log.Printf("[backlog] Error: %#v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Internal Server Error"))
+				return
+			}
+
+			data = url.Values{}
+			data.Add("customField_69737", fmt.Sprintf("%d(%s)", pr.PullRequest.Number, pr.Action))
+			apiURL = fmt.Sprintf("https://%s.backlog.jp/api/v2/issues/%s?apiKey=%s", conf.Backlog.SpaceKey, issueID, conf.Backlog.APIKey)
+			req, err := http.NewRequest(http.MethodPatch, apiURL, strings.NewReader(data.Encode()))
+			if err != nil {
+				log.Printf("[backlog] Error: %#v", err)
+				w.WriteHeader(http.StatusInternalServerError)
+				w.Write([]byte("Internal Server Error"))
+				return
+			}
+			req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
+
+			_, err = http.DefaultClient.Do(req)
 			if err != nil {
 				log.Printf("[backlog] Error: %#v", err)
 				w.WriteHeader(http.StatusInternalServerError)
